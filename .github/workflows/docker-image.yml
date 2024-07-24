@@ -55,7 +55,7 @@ jobs:
         file: Dockerfile
         platforms: ${{ matrix.platforms }}
         build-args: |
-          NUM_JOBS=2
+          NUM_JOBS=4
           MONGO_VERSION=${{ matrix.mongo_version }}
         push: true
         tags: ${{ secrets.DOCKER_HUB_USER }}/mongo-wo-avx:${{ matrix.mongo_version }}
