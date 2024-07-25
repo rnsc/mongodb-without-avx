@@ -11,7 +11,7 @@ jobs:
 
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       matrix:
         include:
@@ -24,10 +24,12 @@ jobs:
           - mongo_version: 5.0.28
             platforms: |-
               linux/amd64
-              linux/arm64
+              #linux/arm64
+      fail-fast: true
+      max-parallel: 1
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v2.2.0
