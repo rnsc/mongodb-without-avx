@@ -18,8 +18,8 @@ RUN mkdir /src && \
 
 WORKDIR /src
 
-COPY ./o2_patch.diff /o2_patch.diff
-RUN patch -p1 < /o2_patch.diff
+COPY ./mongo8_patch.diff /mongo8_patch.diff
+RUN patch -p1 < /mongo8_patch.diff
 
 ARG NUM_JOBS=
 
