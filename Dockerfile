@@ -170,9 +170,8 @@ RUN export GIT_PYTHON_REFRESH=quiet && \
         --action_env=SSL_CERT_DIR=/etc/ssl/certs \
         --action_env=REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
         --action_env=CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
-        --//bazel/config:mongo_version="${MONGO_VERSION}" \
-        --//bazel/config:git_hash="0000000000000000000000000000000000000000" \
-        --//bazel/config:git_branch="r${MONGO_VERSION}" \
+        --define=MONGO_VERSION="${MONGO_VERSION}" \
+        --define=GIT_COMMIT_HASH="0000000000000000000000000000000000000000" \
         ${JOBS_ARG} \
         //:install-mongod \
         //:install-mongos
