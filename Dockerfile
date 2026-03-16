@@ -7,6 +7,7 @@ FROM debian:12 AS build
 # Install build dependencies for MongoDB 8.x with Bazel
 RUN apt-get update -y && apt-get install -y \
         build-essential \
+        ca-certificates \
         libcurl4-openssl-dev \
         liblzma-dev \
         libssl-dev \
@@ -73,6 +74,10 @@ RUN export GIT_PYTHON_REFRESH=quiet && \
         --config=local \
         --//bazel/config:build_enterprise=False \
         --disable_warnings_as_errors=True \
+        --action_env=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+        --action_env=SSL_CERT_DIR=/etc/ssl/certs \
+        --action_env=REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+        --action_env=CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
         ${JOBS_ARG} \
         //:install-mongod \
         //:install-mongos
