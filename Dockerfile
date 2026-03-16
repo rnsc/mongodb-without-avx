@@ -173,6 +173,7 @@ RUN export GIT_PYTHON_REFRESH=quiet && \
         --disable_warnings_as_errors=True \
         --//bazel/config:debug_symbols=False \
         --//bazel/config:dbg=False \
+        --fission=no \
         --action_env=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
         --action_env=SSL_CERT_DIR=/etc/ssl/certs \
         --action_env=REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
