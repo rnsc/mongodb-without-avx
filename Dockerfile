@@ -138,7 +138,7 @@ ENV PATH="/root/.local/bin:${PATH}"
 # Install Cheetah3 with its C extension for NameMapper, which is used by
 # Bazel's sandboxed Python actions during the build. Without the C extension
 # the build still works but emits a UserWarning about performance.
-RUN pip3 install --no-cache-dir CT3
+RUN pip3 install --break-system-packages --no-cache-dir CT3
 
 # Apply the no-AVX patch to disable sandybridge/AVX optimizations
 # The patch modifies bazel/toolchains/cc/mongo_linux/mongo_linux_cc_toolchain_config.bzl
