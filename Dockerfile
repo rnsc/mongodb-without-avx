@@ -31,12 +31,17 @@ RUN mkdir /src && \
 WORKDIR /src
 
 # Create stub enterprise directory structure to satisfy build dependencies
-# MongoDB's open source build has references to enterprise paths that need to exist
-RUN mkdir -p src/mongo/db/modules/enterprise/src/workloads/streams && \
-    echo '# Stub BUILD file for community build' > ls src/mongo/db/modules/enterprise/BUILD.bazel && \
+# MongoDB's open source build has references to enterprise paths that need to exist.
+# The 'docs' subdirectory is also referenced by //src:core_headers_library_with_debug
+# and must have a stub BUILD file too.
+RUN mkdir -p \
+        src/mongo/db/modules/enterprise/src/workloads/streams \
+        src/mongo/db/modules/enterprise/docs && \
+    echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/BUILD.bazel && \
     echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/src/BUILD.bazel && \
     echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/src/workloads/BUILD.bazel && \
-    echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/src/workloads/streams/BUILD.bazel
+    echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/src/workloads/streams/BUILD.bazel && \
+    echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/docs/BUILD.bazel
 
 # Install Bazelisk directly (handles correct Bazel version automatically)
 # This avoids needing MongoDB's install_bazel.py which has additional Python dependencies
