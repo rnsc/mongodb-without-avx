@@ -31,63 +31,101 @@ RUN mkdir /src && \
 
 WORKDIR /src
 
-# Create stub BUILD files for every enterprise sub-package referenced by
-# src/BUILD.bazel:core_headers_library_with_debug. These paths exist in the
-# enterprise repo but not in the community tarball. The list was extracted
-# directly from src/BUILD.bazel in MongoDB 8.0.19.
-RUN set -e; \
-    STUB='# Stub BUILD file for community build'; \
-    for d in \
-        src/mongo/db/modules/enterprise \
-        src/mongo/db/modules/enterprise/docs \
-        src/mongo/db/modules/enterprise/docs/fle \
-        src/mongo/db/modules/enterprise/docs/testing \
-        src/mongo/db/modules/enterprise/src \
-        src/mongo/db/modules/enterprise/src/audit \
-        src/mongo/db/modules/enterprise/src/audit/logger \
-        src/mongo/db/modules/enterprise/src/audit/mongo \
-        src/mongo/db/modules/enterprise/src/audit/ocsf \
-        src/mongo/db/modules/enterprise/src/encryptdb \
-        src/mongo/db/modules/enterprise/src/fcbis \
-        src/mongo/db/modules/enterprise/src/fips \
-        src/mongo/db/modules/enterprise/src/fle \
-        src/mongo/db/modules/enterprise/src/fle/commands \
-        src/mongo/db/modules/enterprise/src/fle/lib \
-        src/mongo/db/modules/enterprise/src/fle/query_analysis \
-        src/mongo/db/modules/enterprise/src/fle/shell \
-        src/mongo/db/modules/enterprise/src/hot_backups \
-        src/mongo/db/modules/enterprise/src/inmemory \
-        src/mongo/db/modules/enterprise/src/kerberos \
-        src/mongo/db/modules/enterprise/src/kmip \
-        src/mongo/db/modules/enterprise/src/ldap \
-        src/mongo/db/modules/enterprise/src/ldap/connections \
-        src/mongo/db/modules/enterprise/src/ldap/name_mapping \
-        src/mongo/db/modules/enterprise/src/live_import \
-        src/mongo/db/modules/enterprise/src/live_import/commands \
-        src/mongo/db/modules/enterprise/src/magic_restore \
-        src/mongo/db/modules/enterprise/src/queryable \
-        src/mongo/db/modules/enterprise/src/queryable/blockstore \
-        src/mongo/db/modules/enterprise/src/queryable/queryable_wt \
-        src/mongo/db/modules/enterprise/src/sasl \
-        src/mongo/db/modules/enterprise/src/scripts \
-        src/mongo/db/modules/enterprise/src/serverless \
-        src/mongo/db/modules/enterprise/src/streams \
-        src/mongo/db/modules/enterprise/src/streams/commands \
-        src/mongo/db/modules/enterprise/src/streams/exec \
-        src/mongo/db/modules/enterprise/src/streams/exec/checkpoint \
-        src/mongo/db/modules/enterprise/src/streams/exec/tests \
-        src/mongo/db/modules/enterprise/src/streams/management \
-        src/mongo/db/modules/enterprise/src/streams/management/tests \
-        src/mongo/db/modules/enterprise/src/streams/tools \
-        src/mongo/db/modules/enterprise/src/streams/util \
-        src/mongo/db/modules/enterprise/src/streams/util/tests \
-        src/mongo/db/modules/enterprise/src/util \
-        src/mongo/db/modules/enterprise/src/workloads \
-        src/mongo/db/modules/enterprise/src/workloads/streams \
-    ; do \
-        mkdir -p "${d}"; \
-        printf '%s\n' "${STUB}" > "${d}/BUILD.bazel"; \
-    done
+# Create stub BUILD files for every enterprise package and target referenced by
+# src/BUILD.bazel:core_headers_library_with_debug. Each BUILD file declares the
+# exact filegroup targets Bazel expects. Extracted from src/BUILD.bazel in 8.0.19.
+RUN mkdir -p src/mongo/db/modules/enterprise \
+             src/mongo/db/modules/enterprise/docs \
+             src/mongo/db/modules/enterprise/docs/fle \
+             src/mongo/db/modules/enterprise/docs/testing \
+             src/mongo/db/modules/enterprise/src \
+             src/mongo/db/modules/enterprise/src/audit \
+             src/mongo/db/modules/enterprise/src/audit/logger \
+             src/mongo/db/modules/enterprise/src/audit/mongo \
+             src/mongo/db/modules/enterprise/src/audit/ocsf \
+             src/mongo/db/modules/enterprise/src/encryptdb \
+             src/mongo/db/modules/enterprise/src/fcbis \
+             src/mongo/db/modules/enterprise/src/fips \
+             src/mongo/db/modules/enterprise/src/fle \
+             src/mongo/db/modules/enterprise/src/fle/commands \
+             src/mongo/db/modules/enterprise/src/fle/lib \
+             src/mongo/db/modules/enterprise/src/fle/query_analysis \
+             src/mongo/db/modules/enterprise/src/fle/shell \
+             src/mongo/db/modules/enterprise/src/hot_backups \
+             src/mongo/db/modules/enterprise/src/inmemory \
+             src/mongo/db/modules/enterprise/src/kerberos \
+             src/mongo/db/modules/enterprise/src/kmip \
+             src/mongo/db/modules/enterprise/src/ldap \
+             src/mongo/db/modules/enterprise/src/ldap/connections \
+             src/mongo/db/modules/enterprise/src/ldap/name_mapping \
+             src/mongo/db/modules/enterprise/src/live_import \
+             src/mongo/db/modules/enterprise/src/live_import/commands \
+             src/mongo/db/modules/enterprise/src/magic_restore \
+             src/mongo/db/modules/enterprise/src/queryable \
+             src/mongo/db/modules/enterprise/src/queryable/blockstore \
+             src/mongo/db/modules/enterprise/src/queryable/queryable_wt \
+             src/mongo/db/modules/enterprise/src/sasl \
+             src/mongo/db/modules/enterprise/src/scripts \
+             src/mongo/db/modules/enterprise/src/serverless \
+             src/mongo/db/modules/enterprise/src/streams \
+             src/mongo/db/modules/enterprise/src/streams/commands \
+             src/mongo/db/modules/enterprise/src/streams/exec \
+             src/mongo/db/modules/enterprise/src/streams/exec/checkpoint \
+             src/mongo/db/modules/enterprise/src/streams/exec/tests \
+             src/mongo/db/modules/enterprise/src/streams/management \
+             src/mongo/db/modules/enterprise/src/streams/management/tests \
+             src/mongo/db/modules/enterprise/src/streams/tools \
+             src/mongo/db/modules/enterprise/src/streams/util \
+             src/mongo/db/modules/enterprise/src/streams/util/tests \
+             src/mongo/db/modules/enterprise/src/util \
+             src/mongo/db/modules/enterprise/src/workloads \
+             src/mongo/db/modules/enterprise/src/workloads/streams
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "enterprise_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "docs_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/docs/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "fle_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/docs/fle/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "testing_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/docs/testing/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "src_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "audit_commands_idl_gen", srcs = [])\nfilegroup(name = "audit_config_idl_gen", srcs = [])\nfilegroup(name = "audit_decryptor_options_idl_gen", srcs = [])\nfilegroup(name = "audit_event_type_idl_gen", srcs = [])\nfilegroup(name = "audit_global_hdrs", srcs = [])\nfilegroup(name = "audit_header_options_idl_gen", srcs = [])\nfilegroup(name = "audit_options_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/audit/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "logger_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/audit/logger/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "mongo_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/audit/mongo/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "ocsf_audit_events_idl_gen", srcs = [])\nfilegroup(name = "ocsf_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/audit/ocsf/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "decrypt_tool_options_idl_gen", srcs = [])\nfilegroup(name = "encryptdb_global_hdrs", srcs = [])\nfilegroup(name = "encryption_key_manager_idl_gen", srcs = [])\nfilegroup(name = "encryption_options_idl_gen", srcs = [])\nfilegroup(name = "keystore_metadata_idl_gen", srcs = [])\nfilegroup(name = "log_redact_options_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/encryptdb/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "fcbis_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/fcbis/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "fips_flag_client_idl_gen", srcs = [])\nfilegroup(name = "fips_flag_server_idl_gen", srcs = [])\nfilegroup(name = "fips_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/fips/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "fle_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/fle/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "commands_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/fle/commands/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "lib_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/fle/lib/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "query_analysis_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/fle/query_analysis/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "shell_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/fle/shell/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "backup_cursor_parameters_idl_gen", srcs = [])\nfilegroup(name = "document_source_backup_file_idl_gen", srcs = [])\nfilegroup(name = "hot_backups_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/hot_backups/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "inmemory_global_hdrs", srcs = [])\nfilegroup(name = "inmemory_global_options_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/inmemory/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "kerberos_global_hdrs", srcs = [])\nfilegroup(name = "kerberos_tool_options_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/kerberos/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "kmip_global_hdrs", srcs = [])\nfilegroup(name = "kmip_options_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/kmip/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "ldap_global_hdrs", srcs = [])\nfilegroup(name = "ldap_options_idl_gen", srcs = [])\nfilegroup(name = "ldap_options_mongod_idl_gen", srcs = [])\nfilegroup(name = "ldap_parameters_idl_gen", srcs = [])\nfilegroup(name = "ldap_runtime_parameters_idl_gen", srcs = [])\nfilegroup(name = "ldap_tool_options_idl_gen", srcs = [])\nfilegroup(name = "ldap_user_cache_poller_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/ldap/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "connections_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/ldap/connections/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "name_mapping_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/ldap/name_mapping/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "collection_properties_idl_gen", srcs = [])\nfilegroup(name = "live_import_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/live_import/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "commands_global_hdrs", srcs = [])\nfilegroup(name = "export_collection_idl_gen", srcs = [])\nfilegroup(name = "import_collection_idl_gen", srcs = [])\nfilegroup(name = "vote_commit_import_collection_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/live_import/commands/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "magic_restore_global_hdrs", srcs = [])\nfilegroup(name = "magic_restore_options_idl_gen", srcs = [])\nfilegroup(name = "magic_restore_structs_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/magic_restore/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "queryable_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/queryable/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "blockstore_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/queryable/blockstore/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "queryable_global_options_idl_gen", srcs = [])\nfilegroup(name = "queryable_wt_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/queryable/queryable_wt/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "auth_delay_idl_gen", srcs = [])\nfilegroup(name = "oidc_commands_idl_gen", srcs = [])\nfilegroup(name = "oidc_parameters_idl_gen", srcs = [])\nfilegroup(name = "sasl_aws_server_options_idl_gen", srcs = [])\nfilegroup(name = "sasl_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/sasl/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "scripts_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/scripts/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "mongoqd_options_idl_gen", srcs = [])\nfilegroup(name = "serverless_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/serverless/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "streams_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "commands_global_hdrs", srcs = [])\nfilegroup(name = "stream_ops_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/commands/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "checkpoint_data_idl_gen", srcs = [])\nfilegroup(name = "common_idl_gen", srcs = [])\nfilegroup(name = "config_idl_gen", srcs = [])\nfilegroup(name = "exec_global_hdrs", srcs = [])\nfilegroup(name = "exec_internal_idl_gen", srcs = [])\nfilegroup(name = "stages_idl_gen", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/exec/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "checkpoint_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/exec/checkpoint/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "tests_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/exec/tests/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "management_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/management/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "tests_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/management/tests/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "tools_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/tools/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "util_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/util/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "tests_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/streams/util/tests/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "util_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/util/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "workloads_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/workloads/BUILD.bazel
+RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "streams_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/workloads/streams/BUILD.bazel
 
 # Install Bazelisk directly (handles correct Bazel version automatically)
 # This avoids needing MongoDB's install_bazel.py which has additional Python dependencies
