@@ -144,7 +144,9 @@ RUN sed -i 's/-march=sandybridge", "-mtune=generic", "-mprefer-vector-width=128/
     echo "Patch applied. Checking file contents:" && \
     grep -n "march=" bazel/toolchains/cc/mongo_linux/mongo_linux_cc_toolchain_config.bzl || true
 
-ARG NUM_JOBS=
+# Override at build time with: docker build --build-arg NUM_JOBS=8
+# Defaults to nproc-1 (all CPUs minus one to keep the system responsive)
+ARG NUM_JOBS=0
 
 # Build MongoDB using Bazel
 # --config=local disables remote execution (required for building outside MongoDB's infra)
@@ -152,9 +154,14 @@ ARG NUM_JOBS=
 # --action_env flags pass the host CA bundle into sandboxed actions so pip/curl
 #   can verify TLS certificates when fetching Python wheels from PyPI
 RUN export GIT_PYTHON_REFRESH=quiet && \
-    if [ -n "${NUM_JOBS}" ] && [ "${NUM_JOBS}" -gt 0 ]; then \
-        export JOBS_ARG="--jobs=${NUM_JOBS}"; \
+    if [ "${NUM_JOBS}" -gt 0 ] 2>/dev/null; then \
+        RESOLVED_JOBS="${NUM_JOBS}"; \
+    else \
+        CPUS=$(nproc); \
+        RESOLVED_JOBS=$(( CPUS > 1 ? CPUS - 1 : 1 )); \
     fi && \
+    echo "Building with ${RESOLVED_JOBS} job(s) ($(nproc) CPUs available)" && \
+    export JOBS_ARG="--jobs=${RESOLVED_JOBS}" && \
     bazel build \
         --config=local \
         --//bazel/config:build_enterprise=False \
