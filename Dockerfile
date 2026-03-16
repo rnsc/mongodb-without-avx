@@ -5,7 +5,7 @@
 FROM debian:12 AS build
 
 # Install build dependencies for MongoDB 8.x with Bazel
-RUN apt-get update -y && apt-get install --no-install-recommends -y \
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
         libcurl4-openssl-dev \
@@ -33,28 +33,33 @@ WORKDIR /src
 
 # Create stub enterprise directory structure to satisfy build dependencies.
 #
-# src/BUILD.bazel references enterprise sub-packages (docs, queryable, etc.) even when
-# --//bazel/config:build_enterprise=False is set. The set of referenced paths changes
-# across patch releases, so instead of a fixed list we:
-#   1. Parse src/BUILD.bazel to find every enterprise sub-path it mentions, and
-#      stub each one automatically.
-#   2. Also stub a known fixed set as a safety net for paths not caught by grep.
+# Even with --//bazel/config:build_enterprise=False, Bazel's analysis phase still
+# resolves every package path that appears anywhere in BUILD files across the whole
+# source tree. Those paths are not limited to src/BUILD.bazel -- nested BUILD files
+# reference deeper sub-packages like src/streams/management/tests.
+#
+# Strategy: grep ALL *.bazel and BUILD files in the repo for any enterprise path,
+# strip the filename to get the directory, and create a stub BUILD.bazel in each.
+# A fixed safety-net list covers the top-level and any paths missed by grep.
 RUN set -e; \
     ENTERPRISE_ROOT="src/mongo/db/modules/enterprise"; \
     STUB='# Stub BUILD file for community build'; \
     \
-    # Auto-discover every enterprise sub-path mentioned in src/BUILD.bazel
-    grep -oE 'src/mongo/db/modules/enterprise/[^"'\'' >]+' src/BUILD.bazel \
+    # Scan every BUILD file in the repo for referenced enterprise sub-packages
+    grep -rhoE 'src/mongo/db/modules/enterprise/[^"'\'' >]+' \
+            --include='*.bazel' --include='BUILD' . \
         | sed 's|/[^/]*$||' \
         | sort -u \
         | while IFS= read -r subpath; do \
+            # subpath may be relative or absolute-looking; normalise it
+            subpath="${subpath#./}"; \
             rel="${subpath#src/mongo/db/modules/enterprise/}"; \
             fullpath="${ENTERPRISE_ROOT}/${rel}"; \
             mkdir -p "${fullpath}"; \
             printf '%s\n' "${STUB}" > "${fullpath}/BUILD.bazel"; \
           done; \
     \
-    # Fixed safety-net stubs (covers top-level + known subdirs across 8.x releases)
+    # Fixed safety-net: top-level + known subdirs across 8.x patch releases
     for d in \
         "${ENTERPRISE_ROOT}" \
         "${ENTERPRISE_ROOT}/src" \
@@ -62,6 +67,15 @@ RUN set -e; \
         "${ENTERPRISE_ROOT}/src/workloads/streams" \
         "${ENTERPRISE_ROOT}/docs" \
         "${ENTERPRISE_ROOT}/src/queryable" \
+        "${ENTERPRISE_ROOT}/src/streams" \
+        "${ENTERPRISE_ROOT}/src/streams/exec" \
+        "${ENTERPRISE_ROOT}/src/streams/management" \
+        "${ENTERPRISE_ROOT}/src/streams/management/tests" \
+        "${ENTERPRISE_ROOT}/src/streams/util" \
+        "${ENTERPRISE_ROOT}/src/audit" \
+        "${ENTERPRISE_ROOT}/src/fle" \
+        "${ENTERPRISE_ROOT}/src/ldap" \
+        "${ENTERPRISE_ROOT}/src/live_import" \
         "${ENTERPRISE_ROOT}/distsrc" \
     ; do \
         mkdir -p "${d}"; \
