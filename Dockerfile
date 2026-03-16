@@ -30,8 +30,8 @@ RUN sed -i 's/-march=sandybridge", "-mtune=generic", "-mprefer-vector-width=128/
 ARG NUM_JOBS=
 
 RUN export GIT_PYTHON_REFRESH=quiet && \
-    python3 -m pip install requirements_parser && \
-    python3 -m pip install -r etc/pip/compile-requirements.txt && \
+    python3 -m pip install --break-system-packages requirements_parser && \
+    python3 -m pip install --break-system-packages -r etc/pip/compile-requirements.txt && \
     if [ "${NUM_JOBS}" -gt 0 ]; then export JOBS_ARG="-j ${NUM_JOBS}"; fi && \
     python3 buildscripts/scons.py install-devcore MONGO_VERSION="${MONGO_VERSION}" --release --disable-warnings-as-errors ${JOBS_ARG} && \
     mv build/install /install && \
