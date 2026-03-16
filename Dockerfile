@@ -5,7 +5,7 @@
 FROM debian:12 AS build
 
 # Install build dependencies for MongoDB 8.x with Bazel
-RUN apt-get update -y && apt-get install -y \
+RUN apt-get update -y && apt-get install --no-install-recommends -y \
         build-essential \
         ca-certificates \
         libcurl4-openssl-dev \
@@ -31,18 +31,45 @@ RUN mkdir /src && \
 
 WORKDIR /src
 
-# Create stub enterprise directory structure to satisfy build dependencies
-# MongoDB's open source build has references to enterprise paths that need to exist.
-# The 'docs' subdirectory is also referenced by //src:core_headers_library_with_debug
-# and must have a stub BUILD file too.
-RUN mkdir -p \
-        src/mongo/db/modules/enterprise/src/workloads/streams \
-        src/mongo/db/modules/enterprise/docs && \
-    echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/BUILD.bazel && \
-    echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/src/BUILD.bazel && \
-    echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/src/workloads/BUILD.bazel && \
-    echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/src/workloads/streams/BUILD.bazel && \
-    echo '# Stub BUILD file for community build' > src/mongo/db/modules/enterprise/docs/BUILD.bazel
+# Create stub enterprise directory structure to satisfy build dependencies.
+#
+# src/BUILD.bazel references enterprise sub-packages (docs, queryable, etc.) even when
+# --//bazel/config:build_enterprise=False is set. The set of referenced paths changes
+# across patch releases, so instead of a fixed list we:
+#   1. Parse src/BUILD.bazel to find every enterprise sub-path it mentions, and
+#      stub each one automatically.
+#   2. Also stub a known fixed set as a safety net for paths not caught by grep.
+RUN set -e; \
+    ENTERPRISE_ROOT="src/mongo/db/modules/enterprise"; \
+    STUB='# Stub BUILD file for community build'; \
+    \
+    # Auto-discover every enterprise sub-path mentioned in src/BUILD.bazel
+    grep -oE 'src/mongo/db/modules/enterprise/[^"'\'' >]+' src/BUILD.bazel \
+        | sed 's|/[^/]*$||' \
+        | sort -u \
+        | while IFS= read -r subpath; do \
+            rel="${subpath#src/mongo/db/modules/enterprise/}"; \
+            fullpath="${ENTERPRISE_ROOT}/${rel}"; \
+            mkdir -p "${fullpath}"; \
+            printf '%s\n' "${STUB}" > "${fullpath}/BUILD.bazel"; \
+          done; \
+    \
+    # Fixed safety-net stubs (covers top-level + known subdirs across 8.x releases)
+    for d in \
+        "${ENTERPRISE_ROOT}" \
+        "${ENTERPRISE_ROOT}/src" \
+        "${ENTERPRISE_ROOT}/src/workloads" \
+        "${ENTERPRISE_ROOT}/src/workloads/streams" \
+        "${ENTERPRISE_ROOT}/docs" \
+        "${ENTERPRISE_ROOT}/src/queryable" \
+        "${ENTERPRISE_ROOT}/distsrc" \
+    ; do \
+        mkdir -p "${d}"; \
+        printf '%s\n' "${STUB}" > "${d}/BUILD.bazel"; \
+    done; \
+    \
+    echo "Stubbed enterprise directories:"; \
+    find "${ENTERPRISE_ROOT}" -name BUILD.bazel | sort
 
 # Install Bazelisk directly (handles correct Bazel version automatically)
 # This avoids needing MongoDB's install_bazel.py which has additional Python dependencies
@@ -66,6 +93,8 @@ ARG NUM_JOBS=
 # Build MongoDB using Bazel
 # --config=local disables remote execution (required for building outside MongoDB's infra)
 # --//bazel/config:build_enterprise=False explicitly disables enterprise modules
+# --action_env flags pass the host CA bundle into sandboxed actions so pip/curl
+#   can verify TLS certificates when fetching Python wheels from PyPI
 RUN export GIT_PYTHON_REFRESH=quiet && \
     if [ -n "${NUM_JOBS}" ] && [ "${NUM_JOBS}" -gt 0 ]; then \
         export JOBS_ARG="--jobs=${NUM_JOBS}"; \
