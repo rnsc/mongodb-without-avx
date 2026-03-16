@@ -31,60 +31,63 @@ RUN mkdir /src && \
 
 WORKDIR /src
 
-# Stub enterprise packages required by the community build.
-#
-# Even with --//bazel/config:build_enterprise=False, the analysis phase resolves
-# every package path referenced in BUILD files across the whole source tree.
-# Enterprise sub-packages are referenced but don't exist in the community tarball.
-#
-# Neither .bazelignore nor grep-based enumeration works reliably:
-#   - .bazelignore translates to --deleted_packages internally, which still errors
-#     when a BUILD file depends on a deleted package.
-#   - grep misses paths constructed dynamically in Starlark.
-#
-# Solution: run `bazel query` (analysis only, no compilation) in a retry loop.
-#   Each iteration collects every "no such package" error pointing at an enterprise
-#   path, creates a stub BUILD.bazel there, and retries until the query succeeds.
-#   This is guaranteed to terminate because each iteration stubs at least one new
-#   directory, and the total number of referenced packages is finite.
+# Create stub BUILD files for every enterprise sub-package referenced by
+# src/BUILD.bazel:core_headers_library_with_debug. These paths exist in the
+# enterprise repo but not in the community tarball. The list was extracted
+# directly from src/BUILD.bazel in MongoDB 8.0.19.
 RUN set -e; \
-    ENTERPRISE_ROOT="src/mongo/db/modules/enterprise"; \
     STUB='# Stub BUILD file for community build'; \
-    mkdir -p "${ENTERPRISE_ROOT}"; \
-    printf '%s\n' "${STUB}" > "${ENTERPRISE_ROOT}/BUILD.bazel"; \
-    \
-    QUERY_FLAGS=" \
-        --config=local \
-        --//bazel/config:build_enterprise=False \
-        --keep_going \
-        --output=label"; \
-    \
-    for attempt in $(seq 1 30); do \
-        echo "--- Stub attempt ${attempt} ---"; \
-        MISSING=$(bazel query ${QUERY_FLAGS} \
-            'deps(//:install-mongod) + deps(//:install-mongos)' 2>&1 \
-            | grep -oE "no such package '[^']+'" \
-            | grep -oE "'[^']+'" \
-            | tr -d "'" \
-            | grep 'enterprise' \
-            | sort -u) || true; \
-        \
-        if [ -z "${MISSING}" ]; then \
-            echo "All enterprise packages resolved after ${attempt} attempt(s)."; \
-            break; \
-        fi; \
-        \
-        echo "Stubbing missing packages:"; \
-        echo "${MISSING}"; \
-        echo "${MISSING}" | while IFS= read -r pkg; do \
-            dir="${pkg//\/\///}"; \
-            dir="$(echo "${pkg}" | tr ':' '/')"; \
-            mkdir -p "${dir}"; \
-            printf '%s\n' "${STUB}" > "${dir}/BUILD.bazel"; \
-        done; \
-    done; \
-    echo "Final enterprise stubs:"; \
-    find "${ENTERPRISE_ROOT}" -name BUILD.bazel | sort
+    for d in \
+        src/mongo/db/modules/enterprise \
+        src/mongo/db/modules/enterprise/docs \
+        src/mongo/db/modules/enterprise/docs/fle \
+        src/mongo/db/modules/enterprise/docs/testing \
+        src/mongo/db/modules/enterprise/src \
+        src/mongo/db/modules/enterprise/src/audit \
+        src/mongo/db/modules/enterprise/src/audit/logger \
+        src/mongo/db/modules/enterprise/src/audit/mongo \
+        src/mongo/db/modules/enterprise/src/audit/ocsf \
+        src/mongo/db/modules/enterprise/src/encryptdb \
+        src/mongo/db/modules/enterprise/src/fcbis \
+        src/mongo/db/modules/enterprise/src/fips \
+        src/mongo/db/modules/enterprise/src/fle \
+        src/mongo/db/modules/enterprise/src/fle/commands \
+        src/mongo/db/modules/enterprise/src/fle/lib \
+        src/mongo/db/modules/enterprise/src/fle/query_analysis \
+        src/mongo/db/modules/enterprise/src/fle/shell \
+        src/mongo/db/modules/enterprise/src/hot_backups \
+        src/mongo/db/modules/enterprise/src/inmemory \
+        src/mongo/db/modules/enterprise/src/kerberos \
+        src/mongo/db/modules/enterprise/src/kmip \
+        src/mongo/db/modules/enterprise/src/ldap \
+        src/mongo/db/modules/enterprise/src/ldap/connections \
+        src/mongo/db/modules/enterprise/src/ldap/name_mapping \
+        src/mongo/db/modules/enterprise/src/live_import \
+        src/mongo/db/modules/enterprise/src/live_import/commands \
+        src/mongo/db/modules/enterprise/src/magic_restore \
+        src/mongo/db/modules/enterprise/src/queryable \
+        src/mongo/db/modules/enterprise/src/queryable/blockstore \
+        src/mongo/db/modules/enterprise/src/queryable/queryable_wt \
+        src/mongo/db/modules/enterprise/src/sasl \
+        src/mongo/db/modules/enterprise/src/scripts \
+        src/mongo/db/modules/enterprise/src/serverless \
+        src/mongo/db/modules/enterprise/src/streams \
+        src/mongo/db/modules/enterprise/src/streams/commands \
+        src/mongo/db/modules/enterprise/src/streams/exec \
+        src/mongo/db/modules/enterprise/src/streams/exec/checkpoint \
+        src/mongo/db/modules/enterprise/src/streams/exec/tests \
+        src/mongo/db/modules/enterprise/src/streams/management \
+        src/mongo/db/modules/enterprise/src/streams/management/tests \
+        src/mongo/db/modules/enterprise/src/streams/tools \
+        src/mongo/db/modules/enterprise/src/streams/util \
+        src/mongo/db/modules/enterprise/src/streams/util/tests \
+        src/mongo/db/modules/enterprise/src/util \
+        src/mongo/db/modules/enterprise/src/workloads \
+        src/mongo/db/modules/enterprise/src/workloads/streams \
+    ; do \
+        mkdir -p "${d}"; \
+        printf '%s\n' "${STUB}" > "${d}/BUILD.bazel"; \
+    done
 
 # Install Bazelisk directly (handles correct Bazel version automatically)
 # This avoids needing MongoDB's install_bazel.py which has additional Python dependencies
