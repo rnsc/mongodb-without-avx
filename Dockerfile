@@ -2,18 +2,16 @@
 # Based on https://github.com/alanedwardes/mongodb-without-avx
 # Updated for MongoDB 8.x with Bazel build system
 
-FROM ubuntu:20.04 AS build
+FROM debian:12 AS build
 
 # Install build dependencies for MongoDB 8.x with Bazel
-ENV DEBIAN_FRONTEND=noninteractive
-
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
         libcurl4-openssl-dev \
         liblzma-dev \
         libssl-dev \
-        python3-dev \
+        python-dev-is-python3 \
         python3-pip \
         python3-venv \
         lld \
@@ -173,10 +171,13 @@ RUN export GIT_PYTHON_REFRESH=quiet && \
         --config=local \
         --//bazel/config:build_enterprise=False \
         --disable_warnings_as_errors=True \
+        --//bazel/config:debug_symbols=False \
+        --//bazel/config:dbg=False \
         --action_env=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
         --action_env=SSL_CERT_DIR=/etc/ssl/certs \
         --action_env=REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
         --action_env=CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+        --action_env=LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6 \
         --define=MONGO_VERSION="${MONGO_VERSION}" \
         --define=GIT_COMMIT_HASH="0000000000000000000000000000000000000000" \
         ${JOBS_ARG} \
