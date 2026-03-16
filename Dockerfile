@@ -31,44 +31,60 @@ RUN mkdir /src && \
 
 WORKDIR /src
 
-# Tell Bazel to ignore the entire enterprise module tree.
+# Stub enterprise packages required by the community build.
 #
-# Even with --//bazel/config:build_enterprise=False, Bazel's analysis phase still
-# resolves every package path that appears in BUILD files across the whole source
-# tree -- including deeply nested enterprise sub-packages like docs/fle,
-# src/streams/management/tests, etc. These paths are sometimes constructed
-# dynamically in Starlark (loops, string concatenation) so no grep-based approach
-# can reliably enumerate all of them.
+# Even with --//bazel/config:build_enterprise=False, the analysis phase resolves
+# every package path referenced in BUILD files across the whole source tree.
+# Enterprise sub-packages are referenced but don't exist in the community tarball.
 #
-# .bazelignore is the correct solution: it prevents Bazel from ever traversing
-# the enterprise directory, so no missing-package errors can occur regardless of
-# which sub-paths are referenced or how they are constructed.
+# Neither .bazelignore nor grep-based enumeration works reliably:
+#   - .bazelignore translates to --deleted_packages internally, which still errors
+#     when a BUILD file depends on a deleted package.
+#   - grep misses paths constructed dynamically in Starlark.
 #
-# We still need the top-level BUILD.bazel and one stub src/BUILD.bazel so that
-# the //src/mongo/db/modules/enterprise and //src/mongo/db/modules/enterprise/src
-# Bazel package targets (referenced from the root BUILD.bazel) resolve cleanly,
-# but everything beneath them is ignored.
-RUN ENTERPRISE_ROOT="src/mongo/db/modules/enterprise"; \
-    mkdir -p "${ENTERPRISE_ROOT}/src"; \
-    printf '# Stub BUILD file for community build\n' > "${ENTERPRISE_ROOT}/BUILD.bazel"; \
-    printf '# Stub BUILD file for community build\n' > "${ENTERPRISE_ROOT}/src/BUILD.bazel"; \
+# Solution: run `bazel query` (analysis only, no compilation) in a retry loop.
+#   Each iteration collects every "no such package" error pointing at an enterprise
+#   path, creates a stub BUILD.bazel there, and retries until the query succeeds.
+#   This is guaranteed to terminate because each iteration stubs at least one new
+#   directory, and the total number of referenced packages is finite.
+RUN set -e; \
+    ENTERPRISE_ROOT="src/mongo/db/modules/enterprise"; \
+    STUB='# Stub BUILD file for community build'; \
+    mkdir -p "${ENTERPRISE_ROOT}"; \
+    printf '%s\n' "${STUB}" > "${ENTERPRISE_ROOT}/BUILD.bazel"; \
     \
-    # Append the enterprise subtree to .bazelignore (creating the file if absent).
-    # This stops Bazel from walking into the directory and demanding BUILD files
-    # for every sub-package it finds referenced in the community BUILD files.
-    printf '%s\n' "${ENTERPRISE_ROOT}/docs" \
-                  "${ENTERPRISE_ROOT}/distsrc" \
-                  "${ENTERPRISE_ROOT}/src/audit" \
-                  "${ENTERPRISE_ROOT}/src/fle" \
-                  "${ENTERPRISE_ROOT}/src/ldap" \
-                  "${ENTERPRISE_ROOT}/src/live_import" \
-                  "${ENTERPRISE_ROOT}/src/queryable" \
-                  "${ENTERPRISE_ROOT}/src/streams" \
-                  "${ENTERPRISE_ROOT}/src/workloads" \
-        >> .bazelignore; \
+    QUERY_FLAGS=" \
+        --config=local \
+        --//bazel/config:build_enterprise=False \
+        --keep_going \
+        --output=label"; \
     \
-    echo "Updated .bazelignore:"; \
-    cat .bazelignore
+    for attempt in $(seq 1 30); do \
+        echo "--- Stub attempt ${attempt} ---"; \
+        MISSING=$(bazel query ${QUERY_FLAGS} \
+            'deps(//:install-mongod) + deps(//:install-mongos)' 2>&1 \
+            | grep -oE "no such package '[^']+'" \
+            | grep -oE "'[^']+'" \
+            | tr -d "'" \
+            | grep 'enterprise' \
+            | sort -u) || true; \
+        \
+        if [ -z "${MISSING}" ]; then \
+            echo "All enterprise packages resolved after ${attempt} attempt(s)."; \
+            break; \
+        fi; \
+        \
+        echo "Stubbing missing packages:"; \
+        echo "${MISSING}"; \
+        echo "${MISSING}" | while IFS= read -r pkg; do \
+            dir="${pkg//\/\///}"; \
+            dir="$(echo "${pkg}" | tr ':' '/')"; \
+            mkdir -p "${dir}"; \
+            printf '%s\n' "${STUB}" > "${dir}/BUILD.bazel"; \
+        done; \
+    done; \
+    echo "Final enterprise stubs:"; \
+    find "${ENTERPRISE_ROOT}" -name BUILD.bazel | sort
 
 # Install Bazelisk directly (handles correct Bazel version automatically)
 # This avoids needing MongoDB's install_bazel.py which has additional Python dependencies
