@@ -6,6 +6,7 @@ FROM debian:12 AS build
 
 # Install build dependencies for MongoDB 8.x with Bazel
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
+        binutils \
         build-essential \
         ca-certificates \
         libcurl4-openssl-dev \
@@ -31,9 +32,62 @@ RUN mkdir /src && \
 
 WORKDIR /src
 
-# Create stub BUILD files for every enterprise package and target referenced by
-# src/BUILD.bazel:core_headers_library_with_debug. Each BUILD file declares the
-# exact filegroup targets Bazel expects. Extracted from src/BUILD.bazel in 8.0.19.
+# Patch mozjs BUILD.bazel to remove hardcoded -mavx2 flags.
+RUN python3 - << 'PATCHEOF'
+import re
+
+path = "src/third_party/mozjs/BUILD.bazel"
+with open(path) as f:
+    txt = f.read()
+
+# Remove -mavx2 from PLATFORM_COPTS
+txt = txt.replace('] if arch == "x86_64" and os != "windows" else [])', '] if False else [])')
+
+# Replace SIMD_avx2.cpp with a stub
+stub = """
+#include <stddef.h>
+#include <stdint.h>
+namespace mozilla {
+namespace SIMD {
+const char* memchr8AVX2(const char* ptr, char val, size_t len) { return nullptr; }
+const char16_t* memchr16AVX2(const char16_t* ptr, char16_t val, size_t len) { return nullptr; }
+const uint64_t* memchr64AVX2(const uint64_t* ptr, uint64_t val, size_t len) { return nullptr; }
+} // namespace SIMD
+} // namespace mozilla
+"""
+with open("src/third_party/mozjs/extract/mozglue/misc/SIMD_avx2.cpp", "w") as f:
+    f.write(stub)
+
+# Remove -mavx2 from the select() block
+txt = re.sub(r'"//bazel/config:linux_x86_64": \["-mavx2"\],', '"//bazel/config:linux_x86_64": [],', txt)
+txt = re.sub(r'"//bazel/config:macos_x86_64": \["-mavx2"\],', '"//bazel/config:macos_x86_64": [],', txt)
+
+with open(path, "w") as f:
+    f.write(txt)
+
+print("mozjs patch applied")
+PATCHEOF
+
+# Patch mongo_compiler_flags.bzl to replace sandybridge/AVX with x86-64-v2/no-AVX
+RUN sed -i \
+        -e 's/-march=sandybridge/-march=x86-64-v2/g' \
+        -e 's/-mprefer-vector-width=128/-mno-avx -mno-avx2/g' \
+        bazel/toolchains/cc/mongo_linux/mongo_compiler_flags.bzl && \
+    echo "Patch applied:" && \
+    grep -n "march=\|vector-width\|avx\|x86-64" \
+        bazel/toolchains/cc/mongo_linux/mongo_compiler_flags.bzl || true
+
+# Patch CRoaring to disable x64 AVX intrinsics (uses __attribute__((target("avx2"))) which ignores -mno-avx2)
+RUN sed -i 's/mongo_cc_library(/mongo_cc_library(\n    copts = ["-DROARING_DISABLE_X64"],/' \
+        src/third_party/croaring/BUILD.bazel && \
+    echo "CRoaring AVX disabled"
+
+# Patch toolchain to add workspace root to builtin include dirs (fixes absolute path inclusion error)
+RUN sed -i 's|COMMON_BUILTIN_INCLUDE_DIRECTORIES = \[|COMMON_BUILTIN_INCLUDE_DIRECTORIES = [\n    "/src",|' \
+        bazel/toolchains/cc/mongo_linux/mongo_toolchain_flags_v4.bzl && \
+    echo "Toolchain include path patch applied"
+
+# Create stub BUILD files for enterprise packages
 RUN mkdir -p src/mongo/db/modules/enterprise \
              src/mongo/db/modules/enterprise/docs \
              src/mongo/db/modules/enterprise/docs/fle \
@@ -127,37 +181,17 @@ RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(nam
 RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "workloads_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/workloads/BUILD.bazel
 RUN printf 'package(default_visibility = ["//visibility:public"])\nfilegroup(name = "streams_global_hdrs", srcs = [])\n' > src/mongo/db/modules/enterprise/src/workloads/streams/BUILD.bazel
 
-# Install Bazelisk directly (handles correct Bazel version automatically)
-# This avoids needing MongoDB's install_bazel.py which has additional Python dependencies
+# Install Bazelisk
 RUN mkdir -p /root/.local/bin && \
     curl -L -o /root/.local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64 && \
     chmod +x /root/.local/bin/bazel
 
 ENV PATH="/root/.local/bin:${PATH}"
 
-# Install Cheetah3 with its C extension for NameMapper, which is used by
-# Bazel's sandboxed Python actions during the build. Without the C extension
-# the build still works but emits a UserWarning about performance.
-RUN pip3 install --break-system-packages --no-cache-dir CT3
-
-# Apply the no-AVX patch to disable sandybridge/AVX optimizations
-# The patch modifies bazel/toolchains/cc/mongo_linux/mongo_linux_cc_toolchain_config.bzl
-# to use -march=x86-64-v2 instead of -march=sandybridge
-# x86-64-v2 supports SSE4.2 and POPCNT but NOT AVX (compatible with pre-2011 CPUs)
-RUN sed -i 's/-march=sandybridge", "-mtune=generic", "-mprefer-vector-width=128/-march=x86-64-v2", "-mtune=generic/g' \
-    bazel/toolchains/cc/mongo_linux/mongo_linux_cc_toolchain_config.bzl && \
-    echo "Patch applied. Checking file contents:" && \
-    grep -n "march=" bazel/toolchains/cc/mongo_linux/mongo_linux_cc_toolchain_config.bzl || true
-
 # Override at build time with: docker build --build-arg NUM_JOBS=8
-# Defaults to nproc-1 (all CPUs minus one to keep the system responsive)
 ARG NUM_JOBS=0
 
-# Build MongoDB using Bazel
-# --config=local disables remote execution (required for building outside MongoDB's infra)
-# --//bazel/config:build_enterprise=False explicitly disables enterprise modules
-# --action_env flags pass the host CA bundle into sandboxed actions so pip/curl
-#   can verify TLS certificates when fetching Python wheels from PyPI
+# Build MongoDB using Bazel (separate RUN so binary discovery can be iterated without rebuilding)
 RUN export GIT_PYTHON_REFRESH=quiet && \
     if [ "${NUM_JOBS}" -gt 0 ] 2>/dev/null; then \
         RESOLVED_JOBS="${NUM_JOBS}"; \
@@ -168,29 +202,74 @@ RUN export GIT_PYTHON_REFRESH=quiet && \
     echo "Building with ${RESOLVED_JOBS} job(s) ($(nproc) CPUs available)" && \
     export JOBS_ARG="--jobs=${RESOLVED_JOBS}" && \
     bazel build \
+        --config=opt \
         --config=local \
+        --//bazel/config:mongo_toolchain_version=v4 \
         --//bazel/config:build_enterprise=False \
         --disable_warnings_as_errors=True \
-        --//bazel/config:debug_symbols=False \
-        --//bazel/config:dbg=False \
         --fission=no \
+        --copt=-mno-avx \
+        --copt=-mno-avx2 \
+        --copt=-mno-avx512f \
+        --per_file_copt=.*@-mno-avx,-mno-avx2,-mno-avx512f \
         --action_env=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
         --action_env=SSL_CERT_DIR=/etc/ssl/certs \
         --action_env=REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
         --action_env=CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
         --action_env=LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6 \
+        --action_env=PYTHONWARNINGS=ignore:UserWarning \
         --define=MONGO_VERSION="${MONGO_VERSION}" \
         --define=GIT_COMMIT_HASH="0000000000000000000000000000000000000000" \
         ${JOBS_ARG} \
         //:install-mongod \
         //:install-mongos
 
-# Strip and prepare binaries
-RUN strip --strip-debug bazel-bin/install/bin/mongod && \
-    strip --strip-debug bazel-bin/install/bin/mongos && \
-    ls -la bazel-bin/install/bin/
+# Find and copy binaries (separate RUN for cache-friendly iteration)
+RUN mkdir -p /binaries && \
+    echo "=== Exploring bazel output structure ===" && \
+    echo "bazel-bin symlink: $(ls -la bazel-bin 2>/dev/null)" && \
+    echo "bazel-bin resolved: $(readlink -f bazel-bin 2>/dev/null)" && \
+    echo "--- find -L bazel-bin for mongod/mongos ---" && \
+    find -L bazel-bin -name 'mongod' -not -name '*.params' -not -path '*/_objs/*' 2>/dev/null && \
+    find -L bazel-bin -name 'mongos' -not -name '*.params' -not -path '*/_objs/*' 2>/dev/null && \
+    echo "--- find -L bazel-out for mongod/mongos ---" && \
+    find -L bazel-out -name 'mongod' -not -name '*.params' -not -path '*/_objs/*' 2>/dev/null && \
+    find -L bazel-out -name 'mongos' -not -name '*.params' -not -path '*/_objs/*' 2>/dev/null && \
+    echo "--- direct path check ---" && \
+    ls -la bazel-bin/src/mongo/db/mongod bazel-bin/src/mongo/s/mongos 2>/dev/null || true && \
+    ls -la bazel-bin/src/mongo/db/mongod_with_debug bazel-bin/src/mongo/s/mongos_with_debug 2>/dev/null || true && \
+    echo "--- find in bazel cache ---" && \
+    find /root/.cache/bazel -maxdepth 8 -name 'mongod' -not -name '*.params' -not -path '*/_objs/*' 2>/dev/null | head -5 && \
+    echo "=== Copying binaries ===" && \
+    MONGOD=$(find -L bazel-bin -name 'mongod' -not -name '*.params' -not -path '*/_objs/*' 2>/dev/null | head -1) && \
+    if [ -z "$MONGOD" ]; then \
+        MONGOD=$(find -L bazel-bin -name 'mongod_with_debug' -not -path '*/_objs/*' 2>/dev/null | head -1); \
+    fi && \
+    if [ -z "$MONGOD" ]; then \
+        MONGOD=$(find /root/.cache/bazel -name 'mongod' -not -name '*.params' -not -path '*/_objs/*' 2>/dev/null | head -1); \
+    fi && \
+    MONGOS=$(find -L bazel-bin -name 'mongos' -not -name '*.params' -not -path '*/_objs/*' 2>/dev/null | head -1) && \
+    if [ -z "$MONGOS" ]; then \
+        MONGOS=$(find -L bazel-bin -name 'mongos_with_debug' -not -path '*/_objs/*' 2>/dev/null | head -1); \
+    fi && \
+    if [ -z "$MONGOS" ]; then \
+        MONGOS=$(find /root/.cache/bazel -name 'mongos' -not -name '*.params' -not -path '*/_objs/*' 2>/dev/null | head -1); \
+    fi && \
+    echo "Found mongod: ${MONGOD}" && \
+    echo "Found mongos: ${MONGOS}" && \
+    cp -L "${MONGOD}" /binaries/mongod && \
+    cp -L "${MONGOS}" /binaries/mongos && \
+    echo "=== Functions with AVX (ymm) in mongod ===" > /avx_report.txt && \
+    objdump -d /binaries/mongod \
+        | awk '/^[0-9a-f]+ </{func=$0} /%ymm/{print func}' \
+        | sort -u >> /avx_report.txt && \
+    echo "=== AVX instruction count ===" >> /avx_report.txt && \
+    ( objdump -d /binaries/mongod | grep -cE '%ymm|,ymm|vbroadcast' >> /avx_report.txt ) || true && \
+    strip --strip-debug /binaries/mongod && \
+    strip --strip-debug /binaries/mongos && \
+    cat /avx_report.txt
 
-# Final image
+# Final image - includes avx_report.txt for debugging
 FROM debian:12-slim
 
 # Install runtime dependencies
@@ -203,9 +282,10 @@ RUN apt-get update -y && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy MongoDB binaries
-COPY --from=build /src/bazel-bin/install/bin/mongod /usr/local/bin/
-COPY --from=build /src/bazel-bin/install/bin/mongos /usr/local/bin/
+# Copy MongoDB binaries and debug report
+COPY --from=build /binaries/mongod /usr/local/bin/
+COPY --from=build /binaries/mongos /usr/local/bin/
+COPY --from=build /avx_report.txt /avx_report.txt
 
 # Create data directory with proper permissions
 RUN mkdir -p /data/db /data/configdb && \
@@ -226,3 +306,4 @@ USER mongodb
 
 ENTRYPOINT ["/usr/local/bin/mongod"]
 CMD ["--bind_ip_all"]
+
