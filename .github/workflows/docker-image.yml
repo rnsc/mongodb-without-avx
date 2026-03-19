@@ -41,6 +41,7 @@ jobs:
         context: .
         platforms: linux/amd64
         build-args: |
+          NUM_JOBS=8
           MONGO_VERSION=${{ matrix.mongo_version }}
         push: true
         tags: ${{ secrets.DOCKER_HUB_USER }}/mongo-wo-avx:${{ matrix.mongo_version }}
