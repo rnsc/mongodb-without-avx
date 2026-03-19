@@ -232,7 +232,9 @@ RUN apt-get update -y && \
         ca-certificates \
         curl \
     && curl -fsSL "https://downloads.mongodb.com/compass/mongosh-${MONGOSH_VERSION}-linux-x64.tgz" \
-        | tar xz --strip-components=1 -C /usr/local --include='*/bin/*' \
+        | tar xz -C /tmp \
+    && cp /tmp/mongosh-${MONGOSH_VERSION}-linux-x64/bin/mongosh /usr/local/bin/ \
+    && rm -rf /tmp/mongosh-* \
     && apt-get purge -y curl \
     && apt-get autoremove -y \
     && apt-get clean \
