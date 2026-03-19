@@ -1,106 +1,91 @@
-# Building Mongodb without avx
+# MongoDB without AVX
 
-Python Prerequisites
----------------
+Docker image that builds **MongoDB 8.0.x** from source with all AVX/AVX2/AVX512
+instructions removed, so it runs on CPUs without AVX support (e.g., Intel Atom,
+pre-2011 CPUs, some virtualized environments).
 
-In order to build MongoDB, Python 3.7+ is required, and several Python
-modules must be installed. Python 3 is included in macOS 10.15 and later.
-For earlier macOS versions, Python 3 can be installed using Homebrew or
-MacPorts or similar.
+## Quick Start
 
-To install the required Python modules, run:
+```bash
+# Pull the pre-built image
+docker pull rnsc/mongo-wo-avx:8.0.19
 
-    $ python3 -m pip install -r etc/pip/compile-requirements.txt
-
-Installing the requirements inside a python3 based virtualenv
-dedicated to building MongoDB is recommended.
-
-Note: In order to compile C-based Python modules, you'll also need the
-Python and OpenSSL C headers. Run:
-
-* Fedora/RHEL - `dnf install python3-devel openssl-devel`
-* Ubuntu (20.04 and newer)/Debian (Bullseye and newer) - `apt install python-dev-is-python3 libssl-dev`
-* Ubuntu (18.04 and older)/Debian (Buster and older) - `apt install python3.7-dev libssl-dev`
-
-Debian/Ubuntu
---------------
-
-To install dependencies on Debian or Ubuntu systems:
-
-    # apt-get install build-essential
-
-Patching
---------------
-
-```
-git clone --recurse-submodules https://github.com/GermanAizek/mongodb-without-avx.git
-cd mongo
+# Run
+docker run -d -p 27017:27017 --name mongodb rnsc/mongo-wo-avx:8.0.19
 ```
 
-Now you need to choose a patch for your requirements.
+## What's Included
 
- - o2_patch.diff - default optimization
- - o3_patch.diff - maximum optimization (big binary file)
- - os_patch.diff - size binary optimization
+- **mongod** — database server
+- **mongos** — shard router
+- **mongosh** — MongoDB shell (prebuilt binary)
 
-Example:
+## Building from Source
 
+```bash
+# Default build (auto-detects CPU count)
+docker build -t mongo-wo-avx:8.0.19 .
+
+# With explicit parallelism
+docker build --build-arg NUM_JOBS=11 -t mongo-wo-avx:8.0.19 .
+
+# Different 8.0.x patch version
+docker build --build-arg MONGO_VERSION=8.0.18 -t mongo-wo-avx:8.0.18 .
 ```
-patch -p1 SConstruct < ../o3_patch.diff
+
+> **Note:** Only MongoDB 8.0.x versions are supported. The Dockerfile will fail
+> if a non-8.0.x version is specified. Building takes ~90 minutes on a 6-core
+> CPU with 24GB RAM.
+
+### Build Arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `MONGO_VERSION` | `8.0.19` | MongoDB version (must be 8.0.x) |
+| `NUM_JOBS` | `0` (auto) | Parallel build jobs (0 = total CPUs - 1) |
+| `MONGOSH_VERSION` | `2.8.1` | mongosh version to bundle |
+
+## How It Works
+
+MongoDB 8.0.x uses the Bazel build system with a hermetic clang toolchain.
+Several sources of AVX instructions are patched out:
+
+1. **Compiler flags** — `-march=sandybridge` (implies AVX) replaced with `-march=x86-64-v2`
+2. **mozjs (SpiderMonkey)** — AVX2 SIMD functions stubbed out
+3. **CRoaring (bitmap library)** — `ROARING_DISABLE_X64` disables function-level AVX attributes
+4. **Toolchain libstdc++** — the bundled static library contains VEX-encoded instructions; replaced with system `libstdc++.so.6`
+
+The final binary has **zero AVX and zero VEX-encoded instructions**.
+
+## Verifying No AVX
+
+Each image includes an AVX report:
+
+```bash
+docker run --rm --entrypoint cat rnsc/mongo-wo-avx:8.0.19 /avx_report.txt
 ```
 
-Done! Now we perform default building that you need.
+## Tested Hardware
 
-SCons
----------------
+- Intel Atom C3538 (Goldmont) — no AVX support
+- Build host: AMD Ryzen 5 9600X (Zen 5)
 
-If you only want to build the database server `mongod`:
+## Version Compatibility
 
-    $ python3 buildscripts/scons.py install-mongod
+This Dockerfile only supports **MongoDB 8.0.x** (which uses Bazel). Earlier
+versions (pre-8.0.13) used SCons and require different patches. For MongoDB 7.x
+and below, see [GermanAizek/mongodb-without-avx](https://github.com/GermanAizek/mongodb-without-avx)
+or [rallyrabbit/mongodb-without-avx-requirements](https://github.com/rallyrabbit/mongodb-without-avx-requirements).
 
-***Note***: For C++ compilers that are newer than the supported
-version, the compiler may issue new warnings that cause MongoDB to
-fail to build since the build system treats compiler warnings as
-errors. To ignore the warnings, pass the switch
-`--disable-warnings-as-errors` to scons.
+## Runtime Configuration
 
-    $ python3 buildscripts/scons.py install-mongod --disable-warnings-as-errors
+- Base image: `debian:12-slim`
+- Default port: `27017`
+- Data volume: `/data/db`
+- Config volume: `/data/configdb`
+- Runs as user `mongodb` (uid/gid 999)
 
-***Note***: On memory-constrained systems, you may run into an error such as `g++: fatal error: Killed signal terminated program cc1plus`. To use less memory during building, pass the parameter `-j1` to scons. This can be incremented to `-j4`, `-j8`, and higher as appropriate to find the fastest working option on your system. `-j` it's count CPU threads (if CPU does not have multithreading, then its number cores)
+## License
 
-    $ python3 buildscripts/scons.py install-mongod -j1
-
-To install `mongod` directly to `/opt/mongo`
-
-    $ python3 buildscripts/scons.py DESTDIR=/opt/mongo install-mongod
-
-To create an installation tree of the servers in `/tmp/unpriv` that
-can later be copied to `/usr/priv`
-
-    $ python3 buildscripts/scons.py DESTDIR=/tmp/unpriv PREFIX=/usr/priv install-servers
-
-If you want to build absolutely everything (`mongod`, `mongo`, unit
-tests, etc):
-
-    $ python3 buildscripts/scons.py install-all-meta
-
-
-SCons Targets
---------------
-
-The following targets can be named on the scons command line to build and
-install a subset of components:
-
-* `install-mongod`
-* `install-mongos`
-* `install-core` (includes *only* `mongod` and `mongos`)
-* `install-servers` (includes all server components)
-* `install-devcore` (includes `mongod`, `mongos`, and `jstestshell` (formerly `mongo` shell))
-* `install-all` (includes a complete end-user distribution and tests)
-* `install-all-meta` (absolutely everything that can be built and installed)
-
-***NOTE***: The `install-core` and `install-servers` targets are *not*
-guaranteed to be identical. The `install-core` target will only ever include a
-minimal set of "core" server components, while `install-servers` is intended
-for a functional end-user installation. If you are testing, you should use the
-`install-core` or `install-devcore` targets instead.
+MongoDB is licensed under the [Server Side Public License (SSPL)](https://www.mongodb.com/licensing/server-side-public-license).
+This repository only contains build instructions (Dockerfile), not MongoDB source code.
