@@ -222,6 +222,7 @@ RUN mkdir -p /binaries && \
 FROM debian:12-slim
 
 ARG MONGOSH_VERSION=2.8.1
+ARG MONGO_TOOLS_VERSION=100.15.0
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -235,6 +236,10 @@ RUN apt-get update -y && \
         | tar xz -C /tmp \
     && cp /tmp/mongosh-${MONGOSH_VERSION}-linux-x64/bin/mongosh /usr/local/bin/ \
     && rm -rf /tmp/mongosh-* \
+    && curl -fsSL "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-x86_64-${MONGO_TOOLS_VERSION}.deb" \
+        -o /tmp/mongo-tools.deb \
+    && dpkg -i /tmp/mongo-tools.deb \
+    && rm /tmp/mongo-tools.deb \
     && apt-get purge -y curl \
     && apt-get autoremove -y \
     && apt-get clean \
