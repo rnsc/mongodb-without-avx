@@ -67,6 +67,7 @@ with open("src/third_party/mozjs/extract/mozglue/misc/SIMD_avx2.cpp", "w") as f:
 namespace mozilla { namespace SIMD {
 const char* memchr8AVX2(const char* p, char v, size_t n) { return nullptr; }
 const char16_t* memchr16AVX2(const char16_t* p, char16_t v, size_t n) { return nullptr; }
+const uint32_t* memchr32AVX2(const uint32_t* p, uint32_t v, size_t n) { return nullptr; }
 const uint64_t* memchr64AVX2(const uint64_t* p, uint64_t v, size_t n) { return nullptr; }
 }}
 """)
